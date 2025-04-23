@@ -17,6 +17,7 @@ const (
 	TokenAsterisk
 	TokenSlash
 	TokenEQ
+	TokenStrEQ
 	TokenNE
 	TokenGT
 	TokenLT
@@ -87,6 +88,11 @@ func (l *Lexer) NextToken() Token {
 		l.readChar()
 		return Token{Type: TokenSlash, Value: "/"}
 	case '=':
+		if l.peekChar() == '=' {
+			l.readChar()
+			l.readChar()
+			return Token{Type: TokenStrEQ, Value: "=="}
+		}
 		l.readChar()
 		return Token{Type: TokenEQ, Value: "="}
 	case '>':

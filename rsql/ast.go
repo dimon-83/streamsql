@@ -17,6 +17,7 @@ type SelectStatement struct {
 	Condition string
 	Window    WindowDefinition
 	GroupBy   []string
+	Context   model.StreamContext
 }
 
 type Field struct {

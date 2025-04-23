@@ -129,3 +129,69 @@ func TestConditionParsing(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, expected, stmt.Condition)
 }
+
+func TestDetermineExprType(t *testing.T) {
+	tests := []struct {
+		name     string
+		exprStr  string
+		expected model.ProjectionType
+	}{
+		{
+			name:     "简单字段",
+			exprStr:  "deviceId",
+			expected: model.Field,
+		},
+		{
+			name:     "聚合函数",
+			exprStr:  "avg(temperature/10)",
+			expected: model.Func,
+		},
+		{
+			name:     "格式化函数",
+			exprStr:  "format_time(window_start(), 'YYYY-MM-dd HH:mm:ss')",
+			expected: model.Func,
+		},
+		{
+			name:     "窗口函数",
+			exprStr:  "lag(temperature) OVER (PARTITION BY deviIdce)",
+			expected: model.Func,
+		},
+		{
+			name:     "滚动窗口函数",
+			exprStr:  "TumblingWindow('10s')",
+			expected: model.Window,
+		},
+		{
+			name:     "滑动窗口函数",
+			exprStr:  "SlidingWindow('1m')",
+			expected: model.Window,
+		},
+		{
+			name:     "会话窗口函数",
+			exprStr:  "SessionWindow('30s')",
+			expected: model.Window,
+		},
+		{
+			name:     "二元表达式",
+			exprStr:  "temperature/10",
+			expected: model.Expr,
+		},
+		{
+			name:     "复杂二元表达式",
+			exprStr:  "a+b+c/d",
+			expected: model.Expr,
+		},
+		{
+			name:     "类型转换函数",
+			exprStr:  "cast(temperature, 'bigint')",
+			expected: model.Func,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := determineExprType(tt.exprStr)
+			assert.Equal(t, tt.expected, result, "表达式 '%s' 的类型判断错误", tt.exprStr)
+		})
+	}
+}

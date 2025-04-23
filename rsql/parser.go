@@ -58,7 +58,9 @@ func (p *Parser) parseSelect(stmt *SelectStatement) error {
 			expr.WriteString(currentToken.Value)
 			currentToken = p.lexer.NextToken()
 		}
-
+		if currentToken.Type == TokenFROM {
+			break
+		}
 		field := Field{Expression: strings.TrimSpace(expr.String())}
 
 		// 处理别名
@@ -67,9 +69,6 @@ func (p *Parser) parseSelect(stmt *SelectStatement) error {
 		}
 		stmt.Fields = append(stmt.Fields, field)
 		currentToken = p.lexer.NextToken()
-		if currentToken.Type == TokenFROM {
-			break
-		}
 	}
 	return nil
 }
@@ -266,4 +265,40 @@ func (p *Parser) parseWith(stmt *SelectStatement) error {
 	}
 
 	return nil
+}
+
+func determineExprType(exprStr string) model.ProjectionType {
+	// 如果包含 OVER 子句，先提取函数部分
+	if strings.Contains(strings.ToUpper(exprStr), "OVER") {
+		parts := strings.Split(exprStr, "OVER")
+		exprStr = strings.TrimSpace(parts[0]) // 只取 OVER 前面的部分进行判断
+	}
+	program, err := expr.Compile(exprStr)
+	if err != nil {
+		return model.Field // 默认作为字段处理
+	}
+
+	switch node := program.Node().(type) {
+	case *ast.IdentifierNode:
+		// 处理简单字段，如 deviceId
+		return model.Field
+
+	case *ast.CallNode:
+		// 检查是否是窗口函数
+		windowTypes := []string{"TumblingWindow", "SlidingWindow", "SessionWindow"}
+		for _, wt := range windowTypes {
+			if node.Callee.(*ast.IdentifierNode).Value == wt {
+				return model.Win
+			}
+		}
+		// 其他函数调用，如 format_time(), avg() 等
+		return model.Func
+
+	case *ast.BinaryNode:
+		// 处理表达式，如 temperature/10, a+b+c/d
+		return model.Expr
+
+	default:
+		return model.Field
+	}
 }

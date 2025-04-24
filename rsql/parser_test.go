@@ -134,7 +134,7 @@ func TestDetermineExprType(t *testing.T) {
 	tests := []struct {
 		name     string
 		exprStr  string
-		expected model.ProjectionType
+		expected model.ExprType
 	}{
 		{
 			name:     "简单字段",
@@ -148,28 +148,28 @@ func TestDetermineExprType(t *testing.T) {
 		},
 		{
 			name:     "格式化函数",
-			exprStr:  "format_time(window_start(), 'YYYY-MM-dd HH:mm:ss')",
+			exprStr:  "format_time(window_start(),'YYYY-MM-dd HH:mm:ss')",
 			expected: model.Func,
 		},
 		{
 			name:     "窗口函数",
-			exprStr:  "lag(temperature) OVER (PARTITION BY deviIdce)",
+			exprStr:  "lag(temperature)OVER(PARTITION BY deviIdce)",
 			expected: model.Func,
 		},
 		{
 			name:     "滚动窗口函数",
 			exprStr:  "TumblingWindow('10s')",
-			expected: model.Window,
+			expected: model.Win,
 		},
 		{
 			name:     "滑动窗口函数",
 			exprStr:  "SlidingWindow('1m')",
-			expected: model.Window,
+			expected: model.Win,
 		},
 		{
 			name:     "会话窗口函数",
 			exprStr:  "SessionWindow('30s')",
-			expected: model.Window,
+			expected: model.Win,
 		},
 		{
 			name:     "二元表达式",
@@ -183,7 +183,7 @@ func TestDetermineExprType(t *testing.T) {
 		},
 		{
 			name:     "类型转换函数",
-			exprStr:  "cast(temperature, 'bigint')",
+			exprStr:  "cast(temperature,bigint)",
 			expected: model.Func,
 		},
 	}
@@ -193,5 +193,80 @@ func TestDetermineExprType(t *testing.T) {
 			result := determineExprType(tt.exprStr)
 			assert.Equal(t, tt.expected, result, "表达式 '%s' 的类型判断错误", tt.exprStr)
 		})
+	}
+}
+
+func TestParseProjection(t *testing.T) {
+	tests := []struct {
+		sql      string
+		expected []model.ExprMeta
+	}{
+		{
+			sql: "select deviceId, avg(temperature/10) as aa," +
+				" format_time(window_start(), 'YYYY-MM-dd HH:mm:ss') as start , " +
+				" cast(temperature,  'bigint') as big_temp, " +
+				" lag(temperature) OVER (PARTITION BY deviceId) " +
+				" from Input where deviceId='aa' group by deviceId, TumblingWindow('10s')" +
+				" Order By start desc,deviceId asc " +
+				" having avg(temperature/10) > 5 ",
+			expected: []model.ExprMeta{
+				{
+					Expression: "deviceId",
+					Name:       "deviceId",
+					Alias:      "",
+					Type:       model.Field,
+				},
+				{
+					Expression: "avg(temperature/10)",
+					Name:       "avg(temperature/10)",
+					Alias:      "aa",
+					Type:       model.Func,
+				},
+				{
+					Expression: "format_time(window_start(), 'YYYY-MM-dd HH:mm:ss')",
+					Name:       "format_time(window_start(), 'YYYY-MM-dd HH:mm:ss')",
+					Alias:      "start",
+					Type:       model.Func,
+					Args:       []any{"window_start()", "YYYY-MM-dd HH:mm:ss"},
+				},
+				{
+					Expression: "cast(temperature, 'bigint')",
+					Name:       "cast(temperature, 'bigint')",
+					Alias:      "big_temp",
+					Type:       model.Func,
+					Args:       []any{"temperature", "bigint"},
+				},
+				{
+					Expression: "lag(temperature) OVER (PARTITION BY deviceId)",
+					Name:       "lag(temperature)",
+					Alias:      "",
+					Type:       model.Func,
+					Args:       []any{"temperature"},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		parser := NewParser(tt.sql)
+		stmt, err := parser.Parse()
+		assert.NoError(t, err)
+
+		actcualProjection := stmt.Context.Projection
+		assert.Equal(t, len(tt.expected), len(actcualProjection))
+		for i, expected := range tt.expected {
+			assert.Equal(t, expected.Expression, actcualProjection[i].Expression)
+			assert.Equal(t, expected.Name, actcualProjection[i].Name)
+			assert.Equal(t, expected.Alias, actcualProjection[i].Alias)
+			assert.Equal(t, expected.Type, actcualProjection[i].Type)
+			if expected.Args != nil {
+				assert.Equal(t, expected.Args, actcualProjection[i].Args)
+			}
+			if expected.OverClause != nil {
+				assert.Equal(t, expected.OverClause, actcualProjection[i].OverClause)
+			}
+
+		}
+
 	}
 }

@@ -5,6 +5,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/expr-lang/expr"
+	"github.com/expr-lang/expr/ast"
+	"github.com/rulego/streamsql/model"
 )
 
 type Parser struct {
@@ -18,7 +22,9 @@ func NewParser(input string) *Parser {
 }
 
 func (p *Parser) Parse() (*SelectStatement, error) {
-	stmt := &SelectStatement{}
+	stmt := &SelectStatement{
+		Context: model.StreamContext{},
+	}
 
 	// 解析SELECT子句
 	if err := p.parseSelect(stmt); err != nil {
@@ -49,27 +55,52 @@ func (p *Parser) Parse() (*SelectStatement, error) {
 func (p *Parser) parseSelect(stmt *SelectStatement) error {
 	p.lexer.NextToken() // 跳过SELECT
 	currentToken := p.lexer.NextToken()
+	proj := make(model.Projection, 0)
 	for {
 		var expr strings.Builder
+		parenBalance := 0 // 用于跟踪当前表达式片段的括号平衡
 		for {
-			if currentToken.Type == TokenFROM || currentToken.Type == TokenComma || currentToken.Type == TokenAS {
+			// 更新括号平衡计数器
+			if currentToken.Type == TokenLParen {
+				parenBalance++
+			} else if currentToken.Type == TokenRParen {
+				parenBalance--
+			}
+			if currentToken.Type == TokenFROM ||
+				(currentToken.Type == TokenComma && parenBalance == 0) ||
+				currentToken.Type == TokenAS {
 				break
 			}
 			expr.WriteString(currentToken.Value)
 			currentToken = p.lexer.NextToken()
 		}
-		if currentToken.Type == TokenFROM {
-			break
-		}
 		field := Field{Expression: strings.TrimSpace(expr.String())}
 
 		// 处理别名
 		if currentToken.Type == TokenAS {
-			field.Alias = p.lexer.NextToken().Value
+			next := p.lexer.NextToken()
+			if next.Type == TokenSpace {
+				next = p.lexer.NextToken()
+			}
+			field.Alias = next.Value
 		}
 		stmt.Fields = append(stmt.Fields, field)
+		if len(field.Expression) > 0 {
+			meta := model.ExprMeta{
+				Expression: field.Expression,
+				Type:       determineExprType(field.Expression),
+				Name:       field.Expression,
+				Alias:      field.Alias,
+			}
+			meta.ParseArgs()
+			proj = append(proj, meta)
+		}
+		if currentToken.Type == TokenFROM {
+			break
+		}
 		currentToken = p.lexer.NextToken()
 	}
+	stmt.Context.Projection = proj
 	return nil
 }
 
@@ -163,6 +194,7 @@ func convertValue(s string) interface{} {
 }
 
 func (p *Parser) parseFrom(stmt *SelectStatement) error {
+	p.lexer.skipWhitespace()
 	tok := p.lexer.NextToken()
 	if tok.Type != TokenIdent {
 		return errors.New("expected source identifier after FROM")
@@ -181,6 +213,7 @@ func (p *Parser) parseGroupBy(stmt *SelectStatement) error {
 	}
 
 	for {
+		p.lexer.skipWhitespace()
 		tok := p.lexer.NextToken()
 		if tok.Type == TokenWITH || tok.Type == TokenOrder || tok.Type == TokenEOF {
 			break
@@ -267,7 +300,7 @@ func (p *Parser) parseWith(stmt *SelectStatement) error {
 	return nil
 }
 
-func determineExprType(exprStr string) model.ProjectionType {
+func determineExprType(exprStr string) model.ExprType {
 	// 如果包含 OVER 子句，先提取函数部分
 	if strings.Contains(strings.ToUpper(exprStr), "OVER") {
 		parts := strings.Split(exprStr, "OVER")

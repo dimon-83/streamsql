@@ -39,6 +39,7 @@ const (
 	TokenTimestamp
 	TokenTimeUnit
 	TokenOrder
+	TokenSpace
 )
 
 type Token struct {
@@ -52,6 +53,7 @@ type Lexer struct {
 	pos     int
 	readPos int
 	ch      byte
+	cuurent Token
 }
 
 func NewLexer(input string) *Lexer {
@@ -61,79 +63,101 @@ func NewLexer(input string) *Lexer {
 }
 
 func (l *Lexer) NextToken() Token {
-	l.skipWhitespace()
+	// 检查是否有空格，如果有则返回空格标记
+	if isWhitespace(l.ch) {
+		return l.readSpace()
+	}
 
 	switch l.ch {
 	case 0:
-		return Token{Type: TokenEOF}
+		l.cuurent = Token{Type: TokenEOF}
+		return l.cuurent
 	case ',':
 		l.readChar()
-		return Token{Type: TokenComma, Value: ","}
+		l.cuurent = Token{Type: TokenComma, Value: ","}
+		return l.cuurent
 	case '(':
 		l.readChar()
-		return Token{Type: TokenLParen, Value: "("}
+		l.cuurent = Token{Type: TokenLParen, Value: "("}
+		return l.cuurent
 	case ')':
 		l.readChar()
-		return Token{Type: TokenRParen, Value: ")"}
+		l.cuurent = Token{Type: TokenRParen, Value: ")"}
+		return l.cuurent
 	case '+':
 		l.readChar()
-		return Token{Type: TokenPlus, Value: "+"}
+		l.cuurent = Token{Type: TokenPlus, Value: "+"}
+		return l.cuurent
 	case '-':
 		l.readChar()
-		return Token{Type: TokenMinus, Value: "-"}
+		l.cuurent = Token{Type: TokenMinus, Value: "-"}
+		return l.cuurent
 	case '*':
 		l.readChar()
-		return Token{Type: TokenAsterisk, Value: "*"}
+		l.cuurent = Token{Type: TokenAsterisk, Value: "*"}
+		return l.cuurent
 	case '/':
 		l.readChar()
-		return Token{Type: TokenSlash, Value: "/"}
+		l.cuurent = Token{Type: TokenSlash, Value: "/"}
+		return l.cuurent
 	case '=':
 		if l.peekChar() == '=' {
 			l.readChar()
 			l.readChar()
-			return Token{Type: TokenStrEQ, Value: "=="}
+			l.cuurent = Token{Type: TokenEQ, Value: "=="}
+			return l.cuurent
 		}
 		l.readChar()
-		return Token{Type: TokenEQ, Value: "="}
+		l.cuurent = Token{Type: TokenEQ, Value: "="}
+		return l.cuurent
 	case '>':
 		if l.peekChar() == '=' {
 			l.readChar()
 			l.readChar()
-			return Token{Type: TokenGE, Value: ">="}
+			l.cuurent = Token{Type: TokenGE, Value: ">="}
+			return l.cuurent
 		}
 		l.readChar()
-		return Token{Type: TokenGT, Value: ">"}
+		l.cuurent = Token{Type: TokenGT, Value: ">"}
+		return l.cuurent
 	case '<':
 		if l.peekChar() == '=' {
 			l.readChar()
 			l.readChar()
-			return Token{Type: TokenLE, Value: "<="}
+			l.cuurent = Token{Type: TokenLE, Value: "<="}
+			return l.cuurent
 		}
 		l.readChar()
-		return Token{Type: TokenLT, Value: "<"}
+		l.cuurent = Token{Type: TokenLT, Value: "<"}
+		return l.cuurent
 	case '!':
 		if l.peekChar() == '=' {
 			l.readChar()
 			l.readChar()
-			return Token{Type: TokenNE, Value: "!="}
+			l.cuurent = Token{Type: TokenStrEQ, Value: "!="}
+			return l.cuurent
 		}
 	}
 
 	if isLetter(l.ch) {
 		ident := l.readIdentifier()
-		return l.lookupIdent(ident)
+		l.cuurent = l.lookupIdent(ident)
+		return l.cuurent
 	}
 
 	if isDigit(l.ch) {
-		return Token{Type: TokenNumber, Value: l.readNumber()}
+		l.cuurent = Token{Type: TokenNumber, Value: l.readNumber()}
+		return l.cuurent
 	}
 
 	if l.ch == '\'' {
-		return Token{Type: TokenString, Value: l.readString()}
+		l.cuurent = Token{Type: TokenString, Value: l.readString()}
+		return l.cuurent
 	}
 
 	l.readChar()
-	return Token{Type: TokenEOF}
+	l.cuurent = Token{Type: TokenEOF}
+	return l.cuurent
 }
 
 func (l *Lexer) readChar() {
@@ -191,15 +215,17 @@ func (l *Lexer) readNumber() string {
 }
 
 func (l *Lexer) readString() string {
-	l.readChar() // 跳过开头单引号
 	pos := l.pos
-
-	for l.ch != '\'' && l.ch != 0 {
+	l.readChar()
+	for {
+		if l.ch == '\'' {
+			l.readChar()
+			break
+		}
 		l.readChar()
 	}
 
 	str := l.input[pos:l.pos]
-	l.readChar() // 跳过结尾单引号
 	return str
 }
 
@@ -254,4 +280,21 @@ func isLetter(ch byte) bool {
 
 func isDigit(ch byte) bool {
 	return '0' <= ch && ch <= '9'
+}
+
+// 判断字符是否为空白字符
+func isWhitespace(ch byte) bool {
+	return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r'
+}
+
+// 新增方法：读取并压缩连续空格
+func (l *Lexer) readSpace() Token {
+	// 读取所有连续的空白字符
+	for isWhitespace(l.ch) {
+		l.readChar()
+	}
+
+	// 无论有多少连续空格，都返回一个单空格标记
+	l.cuurent = Token{Type: TokenSpace, Value: " "}
+	return l.cuurent
 }
